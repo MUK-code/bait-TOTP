@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Guest WiFi — Enter Code</title>
+<style>
+  body{font-family:Arial,Helvetica,sans-serif;padding:20px}
+  .box{max-width:420px;margin:0 auto}
+  input{padding:10px;margin:8px 0;width:100%;box-sizing:border-box}
+  button{padding:10px;width:100%}
+</style>
+</head>
+<body>
+  <div class="box">
+    <h2>Guest Wi-Fi</h2>
+    <p>Ask the owner for the 6-digit code from their authenticator app.</p>
+    <form method="POST" action="/auth">
+      <input name="client_mac" id="client_mac" type="hidden" />
+      <input name="redirect" id="redirect" type="hidden" />
+      <label>6-digit code</label>
+      <input name="token" type="text" pattern="\d{6}" required maxlength="6" autocomplete="one-time-code"/>
+      <button type="submit">Connect</button>
+    </form>
+  </div>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const mac = params.get("client_mac") || params.get("client") || "";
+    const redirect = params.get("redirect") || "/";
+    document.getElementById("client_mac").value = mac;
+    document.getElementById("redirect").value = redirect;
+  </script>
+</body>
+</html>

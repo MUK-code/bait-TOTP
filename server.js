@@ -1,0 +1,76 @@
+import express from "express";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
+import bodyParser from "body-parser";
+import dotenv from "dotenv";
+import speakeasy from "speakeasy";
+import path from "path";
+import { fileURLToPath } from "url";
+import { loginUnifi, authorizeGuest } from "./lib/unifi.js";
+
+dotenv.config();
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const app = express();
+
+app.use(helmet());
+app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.json());
+app.use(express.static(path.join(__dirname, "public")));
+app.use(rateLimit({ windowMs: 30*1000, max: 8 }));
+
+const OWNER_SECRET = process.env.OWNER_SECRET;
+const UNIFI_HOST = process.env.UNIFI_HOST;
+const UNIFI_USER = process.env.UNIFI_USER;
+const UNIFI_PASS = process.env.UNIFI_PASS;
+const UNIFI_SITE = process.env.UNIFI_SITE || "default";
+const AUTHORIZE_MINUTES = parseInt(process.env.AUTHORIZE_MINUTES || "60", 10);
+
+if (!OWNER_SECRET || !UNIFI_HOST || !UNIFI_USER || !UNIFI_PASS) {
+  console.error("Please configure OWNER_SECRET, UNIFI_HOST, UNIFI_USER, UNIFI_PASS in .env");
+  process.exit(1);
+}
+
+// single-use guard per timestep
+const usedSteps = new Map();
+setInterval(() => {
+  const now = Math.floor(Date.now() / 1000);
+  for (const [step, ts] of usedSteps) {
+    if (ts < now - 300) usedSteps.delete(step);
+  }
+}, 60*1000);
+
+// app.get("/", (req, res) => res.send("UniFi Guest Portal"));
+
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "guest.html"));
+});
+
+app.post("/auth", async (req, res) => {
+  try {
+    const token = (req.body.token || "").trim();
+    const client_mac = (req.body.client_mac || "").trim();
+    const redirect = req.body.redirect || "/";
+
+    if (!/^\d{6}$/.test(token)) return res.status(400).send("Invalid token format.");
+    if (!client_mac) return res.status(400).send("Missing client_mac.");
+
+    const verified = speakeasy.totp.verify({ secret: OWNER_SECRET, encoding: "base32", token, window: 0 });
+    if (!verified) return res.status(401).send("Invalid or expired token.");
+
+    const step = Math.floor(Date.now() / 1000 / 30);
+    if (usedSteps.has(step)) return res.status(403).send("This code has already been used.");
+    usedSteps.set(step, Math.floor(Date.now() / 1000));
+
+    // login to UniFi and authorize
+    const cookie = await loginUnifi(UNIFI_HOST, UNIFI_USER, UNIFI_PASS);
+    await authorizeGuest(UNIFI_HOST, UNIFI_SITE, cookie, client_mac, AUTHORIZE_MINUTES);
+
+    res.send(`<p>Authorized ${client_mac} for ${AUTHORIZE_MINUTES} minutes.</p><p><a href="${redirect}">Continue</a></p>`);
+  } catch (err) {
+    console.error("Auth error:", err?.response?.data || err.message || err);
+    res.status(500).send("Server error. Check logs.");
+  }
+});
+
+const PORT = process.env.PORT || 80;
+app.listen(PORT, () => console.log(`Portal server listening on ${PORT}`));
