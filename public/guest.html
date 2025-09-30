@@ -22,12 +22,6 @@
       <button type="submit">Connect</button>
     </form>
   </div>
-  <script>
-    const params = new URLSearchParams(location.search);
-    const mac = params.get("client_mac") || params.get("client") || "";
-    const redirect = params.get("redirect") || "/";
-    document.getElementById("client_mac").value = mac;
-    document.getElementById("redirect").value = redirect;
-  </script>
+<script src="/guest.js"></script>
 </body>
 </html>
